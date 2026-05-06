@@ -216,3 +216,4 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+services/feature-store/feature_repo/data/online_store.db 
