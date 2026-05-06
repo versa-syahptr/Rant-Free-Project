@@ -1,0 +1,10 @@
+# backend
+fastapi
+uvicorn[standard]
+httpx
+
+# data processing and machine learning
+numpy
+pandas
+feast[postgres]
+# torch handled separately in Dockerfile to ensure GPU compatibility
