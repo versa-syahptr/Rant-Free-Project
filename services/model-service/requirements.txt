@@ -4,6 +4,7 @@ uvicorn[standard]
 httpx
 
 # data processing and machine learning
+fast-langdetect=1.0.1
 numpy
 pandas
 feast[postgres]

@@ -12,6 +12,8 @@ logger = logging.getLogger("uvicorn.error")
 
 
 class Model:
+    labels = ["toxic"]
+
     def __init__(self, model_path: str, poll_interval: float = 5.0):
         self._model_path    = model_path
         self._poll_interval = poll_interval
@@ -82,5 +84,5 @@ class Model:
         # This is a placeholder for the actual prediction logic
         rng = random.Random(hash(text))  # Seed with input text for consistent results
         time.sleep(len(text) * 1e-2)
-        return [rng.random() for _ in range(6)]
+        return [rng.random() for _ in self.labels]
     
