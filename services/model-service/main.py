@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from typing import Annotated, Optional
 
+import fast_langdetect
 import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -17,7 +18,7 @@ from typing import Optional, Literal
 from contextlib import asynccontextmanager
 
 from model import LABELS, RantFreeModel
-from feast_writter import write_prediction
+from feast_writer import FeastWriter
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -29,6 +30,7 @@ CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.3"))
 
 _gpu_executor   = ThreadPoolExecutor(max_workers=1)
 _feast_executor = ThreadPoolExecutor(max_workers=2)
+_feast_writer   = FeastWriter(use_feature_store=False)
 _http_client    = httpx.AsyncClient()
 _model          = RantFreeModel(
     embedding_model_name_or_path=os.getenv("EMBEDDING_MODEL_NAME_OR_PATH", "dummy"),
@@ -86,6 +88,12 @@ async def _enqueue_hitl(request_id: str, confidence: float):
     except Exception as e:
         logger.error(f"HITL enqueue failed [{request_id}]: {e}")
 
+def _detect_language(x: str) -> str:
+    result = fast_langdetect.detect_language(x)
+    if isinstance(result, str):
+        return result
+    else:
+        return "XX"
 
 # --- lifespan ---
 @asynccontextmanager
@@ -115,12 +123,14 @@ async def predict(request: PredictionRequest):
     request_id = str(uuid.uuid4())
 
     scores     = await loop.run_in_executor(_gpu_executor, _model.predict, request.text)
+    score_toxic = scores[0]
     confidence = _compute_confidence(scores)
+    language = _detect_language(request.text)
 
     loop.run_in_executor(
         _feast_executor,
-        write_prediction,
-        request_id, request.text, scores, confidence, _model.version,
+        _feast_writer.write_prediction,
+        request_id, request.text, language, score_toxic, confidence, _model.version,
     )
 
     if confidence < CONFIDENCE_THRESHOLD:
@@ -137,6 +147,3 @@ async def predict(request: PredictionRequest):
 @app.get("/", response_model=HealthResponse)
 async def root():
     return HealthResponse(status="ok", detail="Rant-Free Model Service running")
-
-
-
