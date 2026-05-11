@@ -1,0 +1,149 @@
+:root {
+  --red: #E60012;
+  --red-shadow: #7A0009;
+  --paper: #FBF7F0;
+  --paper-2: #F0E9DC;
+  --ink: #0A0A0A;
+  --yellow: #FFD400;
+  --font-display: 'Press Start 2P', monospace;
+  --font-mono: 'VT323', monospace;
+  --font-ui: 'Space Grotesk', system-ui, sans-serif;
+  --border: 3px solid var(--ink);
+  --shadow: 6px 6px 0 var(--ink);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-ui);
+  background: var(--red);
+  background-image:
+    radial-gradient(circle at 0 0, var(--red-shadow) 1.2px, transparent 1.3px),
+    radial-gradient(circle at 6px 6px, var(--red-shadow) 1.2px, transparent 1.3px);
+  background-size: 12px 12px;
+  background-position: 0 0, 6px 6px;
+  color: var(--ink);
+  min-height: 100vh;
+}
+
+button { font-family: inherit; cursor: pointer; }
+textarea, input, select { font-family: inherit; }
+
+/* Layout */
+.app {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px 24px 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Header */
+.header {
+  background: var(--ink);
+  color: var(--paper);
+  border: var(--border);
+  box-shadow: var(--shadow);
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.brand-name {
+  font-family: var(--font-display);
+  font-size: 18px;
+  color: var(--paper);
+}
+
+.brand-tag {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  color: var(--yellow);
+  margin-top: 4px;
+}
+
+/* Feed placeholder */
+.feed {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.feed-empty {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  color: var(--paper);
+  text-align: center;
+  padding: 60px 0;
+  opacity: 0.6;
+}
+
+/* Composer */
+.composer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--ink);
+  border-top: var(--border);
+  padding: 16px 24px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  z-index: 10;
+}
+
+.composer-textarea {
+  flex: 1;
+  background: var(--paper);
+  color: var(--ink);
+  border: var(--border);
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: 20px;
+  line-height: 1.35;
+  resize: none;
+  outline: none;
+  min-height: 60px;
+  max-height: 180px;
+}
+
+.composer-textarea::placeholder {
+  color: rgba(10,10,10,0.45);
+}
+
+.composer-submit {
+  background: var(--yellow);
+  color: var(--ink);
+  border: var(--border);
+  box-shadow: 4px 4px 0 var(--red-shadow);
+  padding: 12px 20px;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  transition: all 0.08s linear;
+}
+
+.composer-submit:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--red-shadow);
+}
+
+.composer-submit:active {
+  transform: translate(0, 0);
+  box-shadow: 2px 2px 0 var(--red-shadow);
+}
+
+.composer-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: 4px 4px 0 var(--red-shadow);
+}
