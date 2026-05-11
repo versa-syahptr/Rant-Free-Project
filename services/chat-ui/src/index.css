@@ -147,3 +147,36 @@ textarea, input, select { font-family: inherit; }
   transform: none;
   box-shadow: 4px 4px 0 var(--red-shadow);
 }
+
+/* Post card */
+.post-card {
+  background: var(--paper);
+  border: var(--border);
+  box-shadow: var(--shadow);
+  padding: 16px 18px;
+}
+
+.post-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.post-author {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.post-time {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  opacity: 0.55;
+}
+
+.post-content {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  line-height: 1.35;
+}
