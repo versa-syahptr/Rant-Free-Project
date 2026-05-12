@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 
 from lang import detect_lang_with_fasttext
 from model import LABELS, RantFreeModel
-from feast_writter import write_prediction
+from feast_writter import write_prediction_v2
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -118,11 +118,12 @@ async def predict(request: PredictionRequest):
     scores     = await loop.run_in_executor(_gpu_executor, _model.predict, request.text)
     confidence = _compute_confidence(scores)
     language   = detect_lang_with_fasttext(request.text)
+    score_toxic = scores[0]
 
     loop.run_in_executor(
         _feast_executor,
-        write_prediction,
-        request_id, request.text, scores, confidence, language, _model.version,
+        write_prediction_v2,
+        request_id, request.text, score_toxic, confidence, language, _model.version,
     )
 
     if confidence < CONFIDENCE_THRESHOLD:
