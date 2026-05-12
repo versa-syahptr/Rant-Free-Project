@@ -20,6 +20,7 @@ LABELS = ["toxic"]
 @dataclass
 class RantFreeModelConfig:
     prefix: str = "Classify:"
+    min_toxic_token_score: float = 1.0
 
 class RantFreeClassifier(nn.Module):
     def __init__(self, embedding_dim):
@@ -28,17 +29,22 @@ class RantFreeClassifier(nn.Module):
 
     def forward(self, embeddings, attention_mask):
         results = []
+        token_sentiments = []
         for emb, attn in zip(embeddings, attention_mask):
             x = self.linear(emb)
             x = x.squeeze(1)
             x = x * attn
+            token_sentiments.append(x)
+            
             x = x.sum()
             results.append(x)
 
         h = torch.tensor(results)
         o = 2 * torch.sigmoid(h) - 1
         o = torch.maximum(o, torch.zeros_like(o))
-        return h, o
+
+        token_sentiments = torch.stack(token_sentiments)
+        return h, o, token_sentiments
 
 class RantFreePipeline:  # Sadly, it can't be inherited from transformers.Pipeline yet.
     def __init__(
@@ -57,6 +63,7 @@ class RantFreePipeline:  # Sadly, it can't be inherited from transformers.Pipeli
             config = RantFreeModelConfig()
         self._prefix = config.prefix
         self._prefix_length = len(self._tokenizer.tokenize(config.prefix))
+        self._min_toxic_token_score = config.min_toxic_token_score
 
         self._device = self.embedding_model.device
 
@@ -86,13 +93,58 @@ class RantFreePipeline:  # Sadly, it can't be inherited from transformers.Pipeli
             outputs = self.embedding_model(**model_inputs)
         
         embeddings = outputs.last_hidden_state[:, self._prefix_length:-1]
+        input_ids = model_inputs["input_ids"][:, self._prefix_length:-1]
         attention_mask = model_inputs["attention_mask"][:, self._prefix_length:-1]
-        h, o = self.classifier_model(embeddings, attention_mask)
-        return {"raw_scores": h, "scores": o}
+        h, o, token_sentiments = self.classifier_model(embeddings, attention_mask)
+        return {
+            "raw_scores": h,
+            "scores": o,
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "token_sentiments": token_sentiments,
+        }
 
     def postprocess(self, model_outputs):
         old_scores = model_outputs["scores"]
         model_outputs["scores"] = torch.round(old_scores, decimals=1)
+
+        tokens = []
+        new_token_sentiments = []
+        for x, attn, sentiment in zip(model_outputs["input_ids"], model_outputs["attention_mask"], model_outputs["token_sentiments"].tolist()):
+            single_tokens = []
+            single_new_token_sentiments = []
+
+            current_token = ""
+            current_sentiment = 0.0
+            for token, a, s in zip(self._tokenizer.convert_ids_to_tokens(x), attn, sentiment):
+                if a == 0 or token == self._tokenizer.pad_token:
+                    break
+
+                if token.startswith("Ġ"):
+                    if current_token != "" and current_sentiment >= self._min_toxic_token_score:
+                        single_tokens.append(current_token)
+                        single_new_token_sentiments.append(current_sentiment)
+                    
+                    current_token = token.lstrip("Ġ")
+                    current_sentiment = s
+                else:
+                    current_token += token
+                    current_sentiment += s
+
+            if current_token != "" and current_sentiment >= self._min_toxic_token_score:
+                single_tokens.append(current_token)
+                single_new_token_sentiments.append(current_sentiment)
+
+            tokens.append(single_tokens)
+            new_token_sentiments.append([
+                round(float(torch.sigmoid(score)), 1)  for score in new_token_sentiments
+            ])
+
+        model_outputs["toxic_tokens"] = tokens
+        model_outputs["token_sentiments"] = new_token_sentiments
+        del model_outputs["input_ids"]
+        del model_outputs["attention_mask"]
+        
         return model_outputs
 
 class RantFreeModel:
@@ -124,7 +176,7 @@ class RantFreeModel:
         with self._lock:
             return self._version
 
-    def predict(self, text: str) -> list[float]:
+    def predict(self, text: str) -> tuple[list[float], list[dict]]:
         """
         Full inference pipeline: text → scores.
         Runs in _gpu_executor thread — safe to block here.
@@ -134,7 +186,10 @@ class RantFreeModel:
         
         assert pipeline is not None
         result = pipeline([text])
-        return result["scores"]
+        return result["scores"], [
+            {"token": token, "score": score}
+            for token, score in zip(result["toxic_tokens"], result["token_sentiments"])
+        ]
     
     def start_watcher(self):
         """Spawn background thread to watch for model file changes."""
@@ -213,8 +268,8 @@ class RantFreeModel:
                 logger.error(f"Classifier model watcher error: {e}")
             time.sleep(self._poll_interval)
 
-    def _dummy_predict(self, text: str) -> list[float]:
+    def _dummy_predict(self, text: str) -> tuple[list[float], list[dict]]:
         # This is a placeholder for the actual prediction logic
         rng = random.Random(hash(text))  # Seed with input text for consistent results
         time.sleep(len(text) * 1e-2)
-        return [rng.random() for _ in range(len(LABELS))]
+        return [rng.random() for _ in range(len(LABELS))], []
