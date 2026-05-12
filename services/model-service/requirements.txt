@@ -8,3 +8,5 @@ numpy
 pandas
 feast[postgres]
 # torch handled separately in Dockerfile to ensure GPU compatibility
+
+transformers==5.8.0

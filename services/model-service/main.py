@@ -1,6 +1,6 @@
 # Rant-Free Project - Model Service
 # main.py - FastAPI app for serving the model
-# Author: Versa 
+# Author: Versa and Abdi
 
 import asyncio
 import logging
@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, Literal
 from contextlib import asynccontextmanager
 
-from model import Model
+from model import LABELS, RantFreeModel
 from feast_writter import write_prediction
 
 logger = logging.getLogger("uvicorn.error")
@@ -24,14 +24,16 @@ logger = logging.getLogger("uvicorn.error")
 
 
 # jigsaw dataset labels
-LABELS = ["toxic", "severe_toxic", "obscene", "threat", "insult", "identity_hate"]
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.3"))
 
 
 _gpu_executor   = ThreadPoolExecutor(max_workers=1)
 _feast_executor = ThreadPoolExecutor(max_workers=2)
 _http_client    = httpx.AsyncClient()
-_model          = Model(model_path=os.getenv("MODEL_PATH", "dummy"))
+_model          = RantFreeModel(
+    embedding_model_name_or_path=os.getenv("EMBEDDING_MODEL_NAME_OR_PATH", "dummy"),
+    classifier_model_path=os.getenv("CLASSIFIER_MODEL_PATH", "dummy"),
+)
 
 
 # Request and Response Models
@@ -53,9 +55,9 @@ class Prediction(BaseModel):
     
 class PredictionResponse(BaseModel):
     """
-    {predictions: [{"label": "class_name", "score": 0.95}, ...x6 class]}
+    {predictions: [{"label": "class_name", "score": 0.95}, ...xlen(LABELS) class]}
     """
-    predictions: Annotated[list[Prediction], Field(min_length=6, max_length=6)]
+    predictions: Annotated[list[Prediction], Field(min_length=len(LABELS), max_length=len(LABELS))]
     confidence:  float
     request_id:  str
 
