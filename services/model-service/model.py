@@ -29,7 +29,9 @@ class RantFreeClassifier(nn.Module):
     def forward(self, embeddings, attention_mask):
         results = []
         for emb, attn in zip(embeddings, attention_mask):
-            x = self.linear(emb) * attn
+            x = self.linear(emb)
+            x = x.squeeze(1)
+            x = x * attn
             x = x.sum()
             results.append(x)
 
