@@ -16,7 +16,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, Literal
 from contextlib import asynccontextmanager
 
-from model import RantFreeModel
+from lang import detect_lang_with_fasttext
+from model import LABELS, RantFreeModel
 from feast_writter import write_prediction
 
 logger = logging.getLogger("uvicorn.error")
@@ -87,7 +88,6 @@ async def _enqueue_hitl(request_id: str, confidence: float):
     except Exception as e:
         logger.error(f"HITL enqueue failed [{request_id}]: {e}")
 
-
 # --- lifespan ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -117,11 +117,12 @@ async def predict(request: PredictionRequest):
 
     scores     = await loop.run_in_executor(_gpu_executor, _model.predict, request.text)
     confidence = _compute_confidence(scores)
+    language   = detect_lang_with_fasttext(request.text)
 
     loop.run_in_executor(
         _feast_executor,
         write_prediction,
-        request_id, request.text, scores, confidence, _model.version,
+        request_id, request.text, scores, confidence, language, _model.version,
     )
 
     if confidence < CONFIDENCE_THRESHOLD:
