@@ -54,6 +54,10 @@ class PredictionRequest(BaseModel):
 class Prediction(BaseModel):
     label: str
     score: float
+
+class TokenReason(BaseModel):
+    token: str
+    score: Annotated[float, Field(le=0.0, ge=1.0)]
     
 class PredictionResponse(BaseModel):
     """
@@ -62,6 +66,7 @@ class PredictionResponse(BaseModel):
     predictions: Annotated[list[Prediction], Field(min_length=len(LABELS), max_length=len(LABELS))]
     confidence:  float
     request_id:  str
+    reason:      list[TokenReason]
 
 class HealthResponse(BaseModel):
     status: str
@@ -115,9 +120,9 @@ async def predict(request: PredictionRequest):
     loop       = asyncio.get_event_loop()
     request_id = str(uuid.uuid4())
 
-    scores     = await loop.run_in_executor(_gpu_executor, _model.predict, request.text)
+    scores, reason = await loop.run_in_executor(_gpu_executor, _model.predict, request.text)
     confidence = _compute_confidence(scores)
-    language   = detect_lang_with_fasttext(request.text)
+    language = detect_lang_with_fasttext(request.text)
     score_toxic = scores[0]
 
     loop.run_in_executor(
@@ -134,6 +139,7 @@ async def predict(request: PredictionRequest):
         predictions=[Prediction(label=l, score=s) for l, s in zip(LABELS, scores)],
         confidence=confidence,
         request_id=request_id,
+        reason=[TokenReason(token=x["token"], score=x["score"]) for x in reason],
     )
 
 # root endpoint
