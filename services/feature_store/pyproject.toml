@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["feature_store*"]  # hanya package ini, ignore data/ dan registry/
+
+[project]
+name = "feature_store"
+version = "0.1.0"
+dependencies = [
+    "dask[dataframe]==2024.10.0",
+    "feast[mongodb]",
+    "pandas",
+]

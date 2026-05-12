@@ -9,6 +9,8 @@ Features: text, score_toxic, confidence, model_version, toxic
 
 from datetime import timedelta
 from feast import Entity, FeatureView, Field, FileSource
+from feast.infra.offline_stores.contrib.mongodb_offline_store.mongodb import MongoDBSource
+import os
 from feast.types import Float32, Int32, String
 from feast.value_type import ValueType
 
@@ -22,10 +24,23 @@ comment = Entity(
 
 # ── Offline Source ────────────────────────────────────────────────────────────
 # Path relatif dari repo_path (jangan pakai path absolut / Windows)
-comment_source = FileSource(
+comment_source_local = FileSource(
     path="data/dataset.parquet",
     timestamp_field="event_timestamp",
 )
+
+comment_source_mongo = MongoDBSource(
+    name="comment_features",
+    timestamp_field="event_timestamp"
+)
+
+# Pilih source berdasarkan environment
+comment_source = (
+    comment_source_local
+    if not os.environ.get("MONGODB_CONNECTION_STRING")
+    else comment_source_mongo
+)
+
 
 # ── Feature View ──────────────────────────────────────────────────────────────
 # Hanya 5 field sesuai skema — tidak boleh ada tambahan lain.

@@ -6,7 +6,7 @@ sebagai "bootstrap rows" sebelum ada traffic live.
 Jalankan sekali sebelum Model Service mulai berjalan:
     python bootstrap.py
 
-Untuk testing lokal (tanpa PostgreSQL):
+Untuk testing lokal (tanpa mongoDB):
     python bootstrap.py
     (otomatis pakai feature_store.local.yaml)
 """
@@ -15,25 +15,19 @@ import os
 import uuid
 import pandas as pd
 from datetime import datetime, timezone
+import pyarrow as pa
 from feast import FeatureStore
+from store import get_store
 from feature_definitions import comment, comment_features
+from feast.infra.offline_stores.contrib.mongodb_offline_store.mongodb import MongoDBOfflineStore
 
 # ── Konfigurasi ───────────────────────────────────────────────────────────────
 BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
 REPO_PATH    = os.getenv("FEATURE_STORE_REPO_PATH", BASE_DIR)
 YAML_FILE    = os.getenv("FEATURE_STORE_YAML", os.path.join(BASE_DIR, "feature_store.local.yaml"))
 DATASET_PATH = os.path.join(BASE_DIR, "data", "dataset.parquet")
-OUTPUT_PATH  = os.path.join(BASE_DIR, "data", "dataset.parquet")
+OUTPUT_PATH  = os.path.join(BASE_DIR, "data", "dataset-output.parquet")
 
-
-def compute_confidence(score_toxic: float) -> float:
-    """
-    Dihitung oleh Model Service, disimpan apa adanya.
-    0.0 = paling tidak yakin (skor mendekati 0.5)
-    0.5 = paling yakin (skor mendekati 0.0 atau 1.0)
-    Dikali 2 agar range [0, 1] dan threshold tetap 0.5.
-    """
-    return abs(score_toxic - 0.5) * 2
 
 
 def build_bootstrap_rows(df: pd.DataFrame) -> pd.DataFrame:
@@ -55,13 +49,41 @@ def build_bootstrap_rows(df: pd.DataFrame) -> pd.DataFrame:
         "request_id":      [str(uuid.uuid4()) for _ in range(len(df))],
         "event_timestamp": now,
         "text":            df["text"].values,
-        "score_toxic":     None,         # NULL — belum ada model
-        "confidence":      None,         # NULL — belum ada model
+        "score_toxic":  float("nan"),
+        "confidence":   float("nan"),
         "model_version":   "bootstrap",
         "toxic":           df["toxic"].astype("Int32").values,  # nullable int
     })
+    result = result.astype({
+        "score_toxic": "float32",
+        "confidence":  "float32",
+        "toxic":       "Int32",
+    })
 
     return result
+
+
+def bootstrap_direct_write(store: FeatureStore, df: pd.DataFrame):
+    """
+    Bypass write_to_offline_store karena Feast MongoDB butuh sample dokumen
+    untuk infer schema — chicken-and-egg problem saat collection masih kosong.
+    Setelah bootstrap selesai, write_to_offline_store bisa dipakai normal
+    oleh Model Service dan HITL Backend.
+    """
+    total = len(df)
+    written = 0
+
+    def log_progress(n: int):
+        nonlocal written
+        written += n
+        print(f"  {written:,} / {total:,} baris ({written/total*100:.1f}%)")
+
+    MongoDBOfflineStore.offline_write_batch(
+        config=store.config,
+        feature_view=store.get_feature_view("comment_features"),
+        table=pa.Table.from_pandas(df),
+        progress=log_progress,
+    )
 
 
 def main():
@@ -87,38 +109,22 @@ def main():
     print(f"\nTersimpan ke: {OUTPUT_PATH}")
 
     # 4. Feast apply — daftarkan entity & feature view ke registry
-    print(f"\nMenjalankan FeatureStore dari: {REPO_PATH} (yaml: {YAML_FILE})")
-    store = FeatureStore(repo_path=REPO_PATH, fs_yaml_file=YAML_FILE)
+    # print(f"\nMenjalankan FeatureStore dari: {REPO_PATH} (yaml: {YAML_FILE})")
+    # store = FeatureStore(repo_path=REPO_PATH, fs_yaml_file=YAML_FILE)
+    store = get_store()
 
     store.apply([comment, comment_features])
     print("feast apply OK — entity & feature view terdaftar\n")
 
-    # 5. Verifikasi baca dari offline store (sanity check 5 baris)
-    sample_ids = bootstrap_df["request_id"].head(5).tolist()
-    sample_ts  = [bootstrap_df["event_timestamp"].iloc[0]] * 5
+    # 5. write to offline store — load bootstrap rows ke mongoDB (jika pakai postgres)
+    if os.environ.get("MONGODB_CONNECTION_STRING"):
+        print("Menulis bootstrap rows ke mongoDB...")
+        bootstrap_direct_write(store, bootstrap_df)
+        print(f"  {len(bootstrap_df):,} baris ditulis\n")
+    else:
+        print("Mode lokal — data dibaca langsung dari parquet, skip write\n")
 
-    entity_df = pd.DataFrame({
-        "request_id":      sample_ids,
-        "event_timestamp": sample_ts,
-    })
 
-    result = store.get_historical_features(
-        entity_df=entity_df,
-        features=[
-            "comment_features:text",
-            "comment_features:score_toxic",
-            "comment_features:confidence",
-            "comment_features:model_version",
-            "comment_features:toxic",
-        ],
-    ).to_df()
-
-    print("=== Sanity Check — 5 Baris Pertama ===")
-    print(result[["request_id", "model_version", "toxic", "score_toxic"]].to_string(index=False))
-
-    null_count = result["score_toxic"].isna().sum()
-    print(f"\n✅ score_toxic NULL: {null_count}/5 (harusnya 5/5 untuk bootstrap)")
-    print(f"✅ model_version   : {result['model_version'].unique().tolist()} (harusnya ['bootstrap'])")
     print("\nBootstrap selesai!")
 
 
