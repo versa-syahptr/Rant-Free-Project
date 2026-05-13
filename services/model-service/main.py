@@ -1,6 +1,6 @@
 # Rant-Free Project - Model Service
 # main.py - FastAPI app for serving the model
-# Author: Versa 
+# Author: Versa and Abdi
 
 import asyncio
 import logging
@@ -16,22 +16,25 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, Literal
 from contextlib import asynccontextmanager
 
-from model import Model
-from feast_writter import write_prediction
+from lang import detect_lang_with_fasttext
+from model import LABELS, RantFreeModel
+from feast_writter import write_prediction_v2
 
 logger = logging.getLogger("uvicorn.error")
 
 
 
 # jigsaw dataset labels
-LABELS = ["toxic", "severe_toxic", "obscene", "threat", "insult", "identity_hate"]
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.3"))
 
 
 _gpu_executor   = ThreadPoolExecutor(max_workers=1)
 _feast_executor = ThreadPoolExecutor(max_workers=2)
 _http_client    = httpx.AsyncClient()
-_model          = Model(model_path=os.getenv("MODEL_PATH", "dummy"))
+_model          = RantFreeModel(
+    embedding_model_name_or_path=os.getenv("EMBEDDING_MODEL_NAME_OR_PATH", "dummy"),
+    classifier_model_path=os.getenv("CLASSIFIER_MODEL_PATH", "dummy"),
+)
 
 
 # Request and Response Models
@@ -50,14 +53,19 @@ class PredictionRequest(BaseModel):
 class Prediction(BaseModel):
     label: str
     score: float
+
+class TokenReason(BaseModel):
+    token: str
+    score: Annotated[float, Field(le=0.0, ge=1.0)]
     
 class PredictionResponse(BaseModel):
     """
-    {predictions: [{"label": "class_name", "score": 0.95}, ...x6 class]}
+    {predictions: [{"label": "class_name", "score": 0.95}, ...xlen(LABELS) class]}
     """
-    predictions: Annotated[list[Prediction], Field(min_length=6, max_length=6)]
+    predictions: Annotated[list[Prediction], Field(min_length=len(LABELS), max_length=len(LABELS))]
     confidence:  float
     request_id:  str
+    reason:      list[TokenReason]
 
 class HealthResponse(BaseModel):
     status: str
@@ -83,7 +91,6 @@ async def _enqueue_hitl(request_id: str, confidence: float):
         logger.info(f"HITL enqueue successful [{request_id}] (confidence={confidence:.4f})")
     except Exception as e:
         logger.error(f"HITL enqueue failed [{request_id}]: {e}")
-
 
 # --- lifespan ---
 @asynccontextmanager
@@ -112,13 +119,15 @@ async def predict(request: PredictionRequest):
     loop       = asyncio.get_event_loop()
     request_id = str(uuid.uuid4())
 
-    scores     = await loop.run_in_executor(_gpu_executor, _model.predict, request.text)
+    scores, reason = await loop.run_in_executor(_gpu_executor, _model.predict, request.text)
     confidence = _compute_confidence(scores)
+    language = detect_lang_with_fasttext(request.text)
+    score_toxic = scores[0]
 
     loop.run_in_executor(
         _feast_executor,
-        write_prediction,
-        request_id, request.text, scores, confidence, _model.version,
+        write_prediction_v2,
+        request_id, request.text, score_toxic, confidence, language, _model.version,
     )
 
     if confidence < CONFIDENCE_THRESHOLD:
@@ -129,6 +138,7 @@ async def predict(request: PredictionRequest):
         predictions=[Prediction(label=l, score=s) for l, s in zip(LABELS, scores)],
         confidence=confidence,
         request_id=request_id,
+        reason=[TokenReason(token=x["token"], score=x["score"]) for x in reason],
     )
 
 # root endpoint
