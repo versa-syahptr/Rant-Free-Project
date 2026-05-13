@@ -15,6 +15,9 @@ export CLASSIFIER_MODEL_PATH="data/model_weights.pth"
 export USE_DUMMY="false"
 ```
 
+How to init model if not exists yet:
+1. Run init_untrained_classifier.py.
+
 How to (actually) test:
 1. uvicorn main:app --reload
 2. curl -X POST http://127.0.0.1:8000/predict -H "Content-Type: application/json" -d '{"text":"bro made a statement so trash"}'
