@@ -11,3 +11,6 @@ feast[postgres]
 
 accelerate==1.13.0
 transformers==5.8.0
+
+# Testing
+pytest==9.0.3
