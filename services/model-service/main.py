@@ -17,7 +17,7 @@ from typing import Optional, Literal
 from contextlib import asynccontextmanager
 
 from lang import detect_lang_with_fasttext
-from model import LABELS, RantFreeModel
+from model import RantFreeModel
 from feast_writter import write_prediction_v2
 
 logger = logging.getLogger("uvicorn.error")
@@ -50,19 +50,15 @@ class PredictionRequest(BaseModel):
             raise ValueError("Text cannot be empty")
         return value
     
-class Prediction(BaseModel):
-    label: str
-    score: float
-
 class TokenReason(BaseModel):
     token: str
     score: Annotated[float, Field(le=0.0, ge=1.0)]
     
 class PredictionResponse(BaseModel):
     """
-    {predictions: [{"label": "class_name", "score": 0.95}, ...xlen(LABELS) class]}
+    {score_toxic: float, reason: [{token: str, score: float}]}
     """
-    predictions: Annotated[list[Prediction], Field(min_length=len(LABELS), max_length=len(LABELS))]
+    score_toxic: float
     confidence:  float
     request_id:  str
     reason:      list[TokenReason]
@@ -72,13 +68,13 @@ class HealthResponse(BaseModel):
     detail: Optional[str] = None
 
 # --- helpers ---
-def _compute_confidence(scores: list[float]) -> float:
+def _compute_confidence(score: float) -> float:
     """
-    Compute the overall confidence of the model's predictions.
+    Compute the confidence of the model's predictions.
     A score of 0.99 or 0.01 → model is very sure → contributes 0.49 to confidence
     A score of 0.51 or 0.49 → model is unsure → contributes 0.01 to confidence
     """
-    return sum(abs(s - 0.5) for s in scores) / len(scores)
+    return abs(score - 0.5)
 
 async def _enqueue_hitl(request_id: str, confidence: float):
     try:
@@ -119,10 +115,13 @@ async def predict(request: PredictionRequest):
     loop       = asyncio.get_event_loop()
     request_id = str(uuid.uuid4())
 
-    scores, reason = await loop.run_in_executor(_gpu_executor, _model.predict, request.text)
-    confidence = _compute_confidence(scores)
+    score_toxic, reason = await loop.run_in_executor(_gpu_executor, _model.predict, request.text)
+    confidence = _compute_confidence(score_toxic)
     language = detect_lang_with_fasttext(request.text)
-    score_toxic = scores[0]
+
+    # Make sure it's rounded by only one before returned as response
+    score_toxic = round(score_toxic, 1)
+    reason = [x | {"score": round(x["score"], 1)} for x in reason]
 
     loop.run_in_executor(
         _feast_executor,
@@ -135,7 +134,7 @@ async def predict(request: PredictionRequest):
         asyncio.create_task(_enqueue_hitl(request_id, confidence))
 
     return PredictionResponse(
-        predictions=[Prediction(label=l, score=s) for l, s in zip(LABELS, scores)],
+        score_toxic=score_toxic,
         confidence=confidence,
         request_id=request_id,
         reason=[TokenReason(token=x["token"], score=x["score"]) for x in reason],
