@@ -191,7 +191,7 @@ class RantFreeModel:
             pipeline = self._pipeline
         
         assert pipeline is not None
-        result = pipeline([text, text])
+        result = pipeline([text])
         score_toxic = float(result["scores"][0])
         reason = [
             {"token": token, "score": float(score)}
