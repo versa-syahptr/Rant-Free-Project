@@ -15,6 +15,11 @@ from torch import nn
 
 logger = logging.getLogger("uvicorn.error")
 
+def load_embedding_tokenizer_and_model(name_or_path: str):
+    tokenizer = AutoTokenizer.from_pretrained(name_or_path)
+    model = AutoModel.from_pretrained(name_or_path, torch_dtype=torch.float16, device_map="auto")
+    return tokenizer, model
+
 @dataclass
 class RantFreeModelConfig:
     prefix: str = "Classify:"
@@ -234,8 +239,7 @@ class RantFreeModel:
         logger.info(f"Pipeline loaded: {version}")
 
     def _load_embedding(self, name_or_path: str):
-        tokenizer = AutoTokenizer.from_pretrained(name_or_path)
-        model = AutoModel.from_pretrained(name_or_path, torch_dtype=torch.float16, device_map="auto")
+        tokenizer, model = load_embedding_tokenizer_and_model(name_or_path)
         model.eval()
 
         logger.info(f"Embedding model loaded")
