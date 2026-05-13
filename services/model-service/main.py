@@ -31,9 +31,23 @@ CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.3"))
 _gpu_executor   = ThreadPoolExecutor(max_workers=1)
 _feast_executor = ThreadPoolExecutor(max_workers=2)
 _http_client    = httpx.AsyncClient()
+
+use_dummy = os.getenv("USE_DUMMY") == "true"
+if use_dummy:
+    embedding_model_name_or_path = "dummy"
+    classifier_model_path = "dummy"
+else:
+    embedding_model_name_or_path = os.getenv("EMBEDDING_MODEL_NAME_OR_PATH")
+    if embedding_model_name_or_path is None:
+        raise ValueError("EMBEDDING_MODEL_NAME_OR_PATH environment variables should be set.")
+
+    classifier_model_path = os.getenv("CLASSIFIER_MODEL_PATH")
+    if classifier_model_path is None:
+        raise ValueError("CLASSIFIER_MODEL_PATH environment variables should be set.")
+
 _model          = RantFreeModel(
-    embedding_model_name_or_path=os.getenv("EMBEDDING_MODEL_NAME_OR_PATH", "dummy"),
-    classifier_model_path=os.getenv("CLASSIFIER_MODEL_PATH", "dummy"),
+    embedding_model_name_or_path=embedding_model_name_or_path,
+    classifier_model_path=classifier_model_path,
 )
 
 
@@ -119,10 +133,6 @@ async def predict(request: PredictionRequest):
     confidence = _compute_confidence(score_toxic)
     language = detect_lang_with_fasttext(request.text)
 
-    # Make sure it's rounded by only one before returned as response
-    score_toxic = round(score_toxic, 1)
-    reason = [x | {"score": round(x["score"], 1)} for x in reason]
-
     loop.run_in_executor(
         _feast_executor,
         write_prediction_v2,
@@ -132,6 +142,11 @@ async def predict(request: PredictionRequest):
     if confidence < CONFIDENCE_THRESHOLD:
         logger.info(f"Low confidence ({confidence:.4f}) for request {request_id}, enqueuing for HITL review")
         asyncio.create_task(_enqueue_hitl(request_id, confidence))
+
+    # Make sure it's rounded by only one before returned as response
+    score_toxic = round(score_toxic, 1)
+    confidence = round(confidence, 1)
+    reason = [x | {"score": round(x["score"], 1)} for x in reason]
 
     return PredictionResponse(
         score_toxic=score_toxic,
