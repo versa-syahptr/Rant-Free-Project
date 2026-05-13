@@ -65,8 +65,9 @@ class TokenReason(BaseModel):
     
 class PredictionResponse(BaseModel):
     """
-    {score_toxic: float, reason: [{token: str, score: float}]}
+    {text: str, score_toxic: float, reason: [{token: str, score: float}]}
     """
+    text:        str
     score_toxic: float
     confidence:  float
     request_id:  str
@@ -124,14 +125,15 @@ async def predict(request: PredictionRequest):
     loop       = asyncio.get_event_loop()
     request_id = str(uuid.uuid4())
 
-    score_toxic, reason = await loop.run_in_executor(_gpu_executor, _model.predict, request.text)
+    text = request.text
+    score_toxic, reason = await loop.run_in_executor(_gpu_executor, _model.predict, text)
     confidence = _compute_confidence(score_toxic)
-    language = detect_lang_with_fasttext(request.text)
+    language = detect_lang_with_fasttext(text)
 
     loop.run_in_executor(
         _feast_executor,
         write_prediction_v2,
-        request_id, request.text, score_toxic, confidence, language, _model.version,
+        request_id, text, score_toxic, confidence, language, _model.version,
     )
 
     if confidence < CONFIDENCE_THRESHOLD:
@@ -144,6 +146,7 @@ async def predict(request: PredictionRequest):
     reason = [x | {"score": round(x["score"], 1)} for x in reason]
 
     return PredictionResponse(
+        text=text,
         score_toxic=score_toxic,
         confidence=confidence,
         request_id=request_id,
