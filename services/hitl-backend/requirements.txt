@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+dask[dataframe]==2024.10.0
+feast[mongodb]==0.63.0
+pymongo
