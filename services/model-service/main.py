@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 from lang import detect_lang_with_fasttext
 from model import RantFreeModel
 from feast_writter import write_prediction_v2
+from utils import get_info_from_env
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -37,13 +38,7 @@ if use_dummy:
     embedding_model_name_or_path = "dummy"
     classifier_model_path = "dummy"
 else:
-    embedding_model_name_or_path = os.getenv("EMBEDDING_MODEL_NAME_OR_PATH")
-    if embedding_model_name_or_path is None:
-        raise ValueError("EMBEDDING_MODEL_NAME_OR_PATH environment variables should be set.")
-
-    classifier_model_path = os.getenv("CLASSIFIER_MODEL_PATH")
-    if classifier_model_path is None:
-        raise ValueError("CLASSIFIER_MODEL_PATH environment variables should be set.")
+    embedding_model_name_or_path, classifier_model_path = get_info_from_env()
 
 _model          = RantFreeModel(
     embedding_model_name_or_path=embedding_model_name_or_path,
