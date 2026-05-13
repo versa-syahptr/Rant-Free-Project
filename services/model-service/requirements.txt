@@ -9,4 +9,5 @@ pandas
 feast[postgres]
 # torch handled separately in Dockerfile to ensure GPU compatibility
 
+accelerate==1.13.0
 transformers==5.8.0
