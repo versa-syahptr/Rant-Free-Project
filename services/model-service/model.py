@@ -15,7 +15,10 @@ from torch import nn
 
 logger = logging.getLogger("uvicorn.error")
 
-LABELS = ["toxic"]
+def load_embedding_tokenizer_and_model(name_or_path: str):
+    tokenizer = AutoTokenizer.from_pretrained(name_or_path)
+    model = AutoModel.from_pretrained(name_or_path, torch_dtype=torch.float16, device_map="auto")
+    return tokenizer, model
 
 @dataclass
 class RantFreeModelConfig:
@@ -95,7 +98,10 @@ class RantFreePipeline:  # Sadly, it can't be inherited from transformers.Pipeli
         embeddings = outputs.last_hidden_state[:, self._prefix_length:-1]
         input_ids = model_inputs["input_ids"][:, self._prefix_length:-1]
         attention_mask = model_inputs["attention_mask"][:, self._prefix_length:-1]
-        h, o, token_sentiments = self.classifier_model(embeddings, attention_mask)
+
+        with torch.no_grad():
+            h, o, token_sentiments = self.classifier_model(embeddings, attention_mask)
+        
         return {
             "raw_scores": h,
             "scores": o,
@@ -137,7 +143,7 @@ class RantFreePipeline:  # Sadly, it can't be inherited from transformers.Pipeli
 
             tokens.append(single_tokens)
             new_token_sentiments.append([
-                round(float(torch.sigmoid(score)), 1)  for score in new_token_sentiments
+                torch.sigmoid(score) for score in single_new_token_sentiments
             ])
 
         model_outputs["toxic_tokens"] = tokens
@@ -176,7 +182,7 @@ class RantFreeModel:
         with self._lock:
             return self._version
 
-    def predict(self, text: str) -> tuple[list[float], list[dict]]:
+    def predict(self, text: str) -> tuple[float, list[dict]]:
         """
         Full inference pipeline: text → scores.
         Runs in _gpu_executor thread — safe to block here.
@@ -186,10 +192,12 @@ class RantFreeModel:
         
         assert pipeline is not None
         result = pipeline([text])
-        return result["scores"], [
-            {"token": token, "score": score}
-            for token, score in zip(result["toxic_tokens"], result["token_sentiments"])
+        score_toxic = float(result["scores"][0])
+        reason = [
+            {"token": token, "score": float(score)}
+            for token, score in zip(result["toxic_tokens"][0], result["token_sentiments"][0])
         ]
+        return score_toxic, reason
     
     def start_watcher(self):
         """Spawn background thread to watch for model file changes."""
@@ -231,8 +239,7 @@ class RantFreeModel:
         logger.info(f"Pipeline loaded: {version}")
 
     def _load_embedding(self, name_or_path: str):
-        tokenizer = AutoTokenizer.from_pretrained(name_or_path)
-        model = AutoModel.from_pretrained(name_or_path, torch_dtype=torch.float16, device_map="auto")
+        tokenizer, model = load_embedding_tokenizer_and_model(name_or_path)
         model.eval()
 
         logger.info(f"Embedding model loaded")
@@ -242,6 +249,7 @@ class RantFreeModel:
         embedding_dim = embedding_model.get_input_embeddings().embedding_dim
         model = RantFreeClassifier(embedding_dim=embedding_dim)
         model.load_state_dict(torch.load(path, weights_only=True))
+        model = model.to(embedding_model.device)
         model.eval()
         logger.info(f"Classifier model loaded (embedding_dim: {embedding_dim})")
         return model
@@ -268,8 +276,8 @@ class RantFreeModel:
                 logger.error(f"Classifier model watcher error: {e}")
             time.sleep(self._poll_interval)
 
-    def _dummy_predict(self, text: str) -> tuple[list[float], list[dict]]:
+    def _dummy_predict(self, text: str) -> tuple[float, list[dict]]:
         # This is a placeholder for the actual prediction logic
         rng = random.Random(hash(text))  # Seed with input text for consistent results
         time.sleep(len(text) * 1e-2)
-        return [rng.random() for _ in range(len(LABELS))], []
+        return rng.random(), []
