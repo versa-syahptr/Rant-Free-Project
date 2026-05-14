@@ -1,0 +1,126 @@
+# docker-compose.yml (repo root)
+# Rant-Free Project - Local Development
+# Usage:
+#   docker compose up --build      # first time
+#   docker compose up              # subsequent runs
+
+services:
+  mongodb:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: feast
+    volumes:
+      - mongodb_data:/data/db
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - rfp-net
+
+  feast-bootstrap:
+    image: python:3.12-slim
+    working_dir: /app
+    volumes:
+      - ./services/feature_store:/app/
+      - feast_registry:/app/registry/
+    command:
+      - /bin/sh
+      - -c
+      - |
+        pwd && ls -la /app
+        pip install -e . -q
+        python bootstrap.py
+    environment:
+      PYTHONUNBUFFERED: "1"
+      MONGODB_CONNECTION_STRING: mongodb://mongodb:27017
+      MONGODB_DATABASE: feast
+      MONGODB_COLLECTION: feature_history
+      FEATURE_STORE_REGISTRY_PATH: /app/registry/
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - rfp-net
+    restart: "no"
+
+  model-service:
+    build:
+      context: ./services
+      dockerfile: model-service/Dockerfile
+      args:
+        TORCH_INDEX: https://download.pytorch.org/whl/cpu
+    volumes:
+      - ./services/model-service:/app
+      - ./services/feature_store:/app/feature_store
+      - feast_registry:/app/registry/
+    environment:
+      CONFIDENCE_THRESHOLD: "0.25"
+      HITL_BACKEND_URL: http://hitl-backend:8000
+      MODEL_PATH: dummy
+      MONGODB_CONNECTION_STRING: mongodb://mongodb:27017
+      MONGODB_DATABASE: feast
+      MONGODB_COLLECTION: feature_history
+      FEATURE_STORE_REGISTRY_PATH: /app/registry/
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      feast-bootstrap:
+        condition: service_completed_successfully
+    networks:
+      - rfp-net
+
+  hitl-backend:
+    build:
+      context: ./services
+      dockerfile: hitl-backend/Dockerfile
+    volumes:
+      - ./services/hitl-backend:/app
+      - ./services/feature_store:/app/feature_store
+      - feast_registry:/app/registry/
+    environment:
+      MONGODB_CONNECTION_STRING: mongodb://mongodb:27017
+      MONGODB_DATABASE: feast
+      MONGODB_COLLECTION: feature_history
+      FEATURE_STORE_REGISTRY_PATH: /app/registry/
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8001:8000"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      feast-bootstrap:
+        condition: service_completed_successfully
+    networks:
+      - rfp-net
+
+  input-service:
+    build:
+      context: ./services/chat-ui
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./services/chat-ui/src:/app/src
+    networks:
+      - rfp-net
+    environment:
+      - MODEL_SERVICE_URL=http://model-service:8000
+    depends_on:
+      - model-service
+
+volumes:
+  mongodb_data:
+  feast_registry:
+
+networks:
+  rfp-net:
+    driver: bridge
