@@ -16,6 +16,14 @@ ARG TORCH_INDEX=https://download.pytorch.org/whl/cu118
 
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /fasttext && \
+    wget -q https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin \
+    -O /fasttext/lid.176.bin
+
 COPY model-service/requirements.txt .
 RUN pip install --no-cache-dir torch --index-url ${TORCH_INDEX}
 RUN pip install --no-cache-dir -r requirements.txt
@@ -23,5 +31,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY feature_store/ /app/feature_store/
 RUN pip install --no-cache-dir -e /app/feature_store/ 
 COPY model-service/ .
+
+ENV FASTTEXT_MODEL_PATH=/fasttext/lid.176.bin
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
