@@ -27,7 +27,7 @@ logger = logging.getLogger("uvicorn.error")
 
 # jigsaw dataset labels
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.3"))
-
+HITL_BACKEND_URL = os.getenv("HITL_BACKEND_URL", "http://localhost:8001")
 
 _gpu_executor   = ThreadPoolExecutor(max_workers=1)
 _feast_executor = ThreadPoolExecutor(max_workers=2)
@@ -88,11 +88,11 @@ def _compute_confidence(score: float) -> float:
 
 async def _enqueue_hitl(request_id: str, confidence: float):
     try:
-        # await _http_client.post(
-        #     f"{HITL_BACKEND_URL}/queue",
-        #     json={"request_id": request_id, "confidence": confidence},
-        #     timeout=5.0,
-        # )
+        await _http_client.post(
+            f"{HITL_BACKEND_URL}/queue",
+            json={"request_id": request_id, "confidence": confidence},
+            timeout=5.0,
+        )
         await asyncio.sleep(0.1)  # Simulate network delay
         logger.info(f"HITL enqueue successful [{request_id}] (confidence={confidence:.4f})")
     except Exception as e:
