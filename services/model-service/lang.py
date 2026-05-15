@@ -4,7 +4,7 @@ import os
 import urllib.request
 import fasttext
 
-MODEL_PATH = "data/lid.176.bin"
+MODEL_PATH = os.getenv("FASTTEXT_MODEL_PATH", "fasttext/lid.176.bin")
 
 # Download model sekali saja
 if not os.path.exists(MODEL_PATH):
