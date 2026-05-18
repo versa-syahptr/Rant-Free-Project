@@ -26,7 +26,6 @@ logger = logging.getLogger("uvicorn.error")
 
 
 # jigsaw dataset labels
-LABELS = ["toxic", "severe_toxic", "obscene", "threat", "insult", "identity_hate"]
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.3"))
 HITL_BACKEND_URL = os.getenv("HITL_BACKEND_URL", "http://localhost:8001")
 

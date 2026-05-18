@@ -1,8 +1,19 @@
+from pathlib import Path
+
+from init_untrained_classifier import init_untrained_classifier
 from model import RantFreeModel
 from utils import get_info_from_env
 
+def test_init_untrained_classifier():
+    embedding_model_name_or_path, classifier_model_path = get_info_from_env()
+    init_untrained_classifier(embedding_model_name_or_path, classifier_model_path)
+    assert Path(classifier_model_path).exists()
+
 def test_model_no_error():
     embedding_model_name_or_path, classifier_model_path = get_info_from_env()
+    if not Path(classifier_model_path).exists():
+        init_untrained_classifier(embedding_model_name_or_path, classifier_model_path)
+    
     model = RantFreeModel(
         embedding_model_name_or_path=embedding_model_name_or_path,
         classifier_model_path=classifier_model_path,
