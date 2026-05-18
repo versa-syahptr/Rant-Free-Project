@@ -2,6 +2,7 @@
 # model.py - Model loading and inference logic
 # Author: Versa and Abdi
 
+from dataclasses import dataclass
 import logging
 import os
 import threading

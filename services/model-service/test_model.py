@@ -39,4 +39,4 @@ def test_model_no_error():
             assert "token" in r
             assert isinstance(r["token"], str)
             assert "score" in r
-            assert isinstance(r["token"], float)
+            assert isinstance(r["score"], float)
