@@ -12,6 +12,7 @@ from typing import Annotated, Optional
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, Literal
 from contextlib import asynccontextmanager
@@ -26,6 +27,8 @@ logger = logging.getLogger("uvicorn.error")
 # jigsaw dataset labels
 LABELS = ["toxic", "severe_toxic", "obscene", "threat", "insult", "identity_hate"]
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.3"))
+MONITORING_SERVICE_URL = os.getenv("MONITORING_SERVICE_URL", "http://localhost:8001")
+HITL_BACKEND_URL = os.getenv("HITL_BACKEND_URL", "http://localhost:8002")
 
 
 _gpu_executor   = ThreadPoolExecutor(max_workers=1)
@@ -72,17 +75,41 @@ def _compute_confidence(scores: list[float]) -> float:
     """
     return sum(abs(s - 0.5) for s in scores) / len(scores)
 
-async def _enqueue_hitl(request_id: str, confidence: float):
+async def _enqueue_hitl(request_id: str, text: str, scores: list[float], confidence: float):
     try:
-        # await _http_client.post(
-        #     f"{HITL_BACKEND_URL}/queue",
-        #     json={"request_id": request_id, "confidence": confidence},
-        #     timeout=5.0,
-        # )
-        await asyncio.sleep(0.1)  # Simulate network delay
+        await _http_client.post(
+            f"{HITL_BACKEND_URL}/queue",
+            json={
+                "request_id": request_id,
+                "text": text,
+                "confidence": confidence,
+                "scores": dict(zip(LABELS, scores)),
+            },
+            timeout=5.0,
+        )
         logger.info(f"HITL enqueue successful [{request_id}] (confidence={confidence:.4f})")
     except Exception as e:
         logger.error(f"HITL enqueue failed [{request_id}]: {e}")
+
+async def _send_monitoring_event(
+    request_id: str, text: str, scores: list[float], confidence: float,
+    model_version: str, low_confidence: bool
+):
+    try:
+        await _http_client.post(
+            f"{MONITORING_SERVICE_URL}/events",
+            json={
+                "request_id": request_id,
+                "text": text,
+                "scores": dict(zip(LABELS, scores)),
+                "confidence": confidence,
+                "model_version": model_version,
+                "low_confidence": low_confidence,
+            },
+            timeout=2.0,
+        )
+    except Exception as e:
+        logger.warning(f"Monitoring event failed [{request_id}]: {e}")
 
 
 # --- lifespan ---
@@ -98,6 +125,13 @@ app = FastAPI(
     title="Rant-Free Model Service",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -121,9 +155,14 @@ async def predict(request: PredictionRequest):
         request_id, request.text, scores, confidence, _model.version,
     )
 
-    if confidence < CONFIDENCE_THRESHOLD:
+    low_confidence = confidence < CONFIDENCE_THRESHOLD
+    if low_confidence:
         logger.info(f"Low confidence ({confidence:.4f}) for request {request_id}, enqueuing for HITL review")
-        asyncio.create_task(_enqueue_hitl(request_id, confidence))
+        asyncio.create_task(_enqueue_hitl(request_id, request.text, scores, confidence))
+
+    asyncio.create_task(_send_monitoring_event(
+        request_id, request.text, scores, confidence, _model.version, low_confidence
+    ))
 
     return PredictionResponse(
         predictions=[Prediction(label=l, score=s) for l, s in zip(LABELS, scores)],
