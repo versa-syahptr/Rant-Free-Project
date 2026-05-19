@@ -1,27 +1,8 @@
 import './index.css';
 import {useState, useEffect, useRef} from 'react';
+import type {ToxicityScores, FilterMode, Post} from './types';
 
 const MODEL_SERVICE_URL = import.meta.env.VITE_MODEL_SERVICE_URL ?? 'http://localhost:8000';
-
-type ToxicityScores = {
-  toxic: number;
-  severe_toxic: number;
-  obscene: number;
-  threat: number;
-  insult: number;
-  identity_hate: number;
-};
-
-type Post = {
-  id: string;
-  author: string;
-  content: string;
-  createdAt: string;
-  scores: ToxicityScores | null;
-  confidence: number | null;
-};
-
-type FilterMode = 'off' | 'mild' | 'strict';
 
 // mild: hide if toxic or obscene score > 0.5
 // strict: hide if any score > 0.3
@@ -31,27 +12,26 @@ function isToxic(scores: ToxicityScores | null, mode: FilterMode): boolean {
   return Object.values(scores).some(s => s > 0.3);
 }
 
-async function fetchPrediction(text: string): Promise<{scores: ToxicityScores; confidence: number} | null> {
-  try {
-    const res = await fetch(`${MODEL_SERVICE_URL}/predict`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({text}),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const scores = Object.fromEntries(
-      data.predictions.map((p: {label: string; score: number}) => [p.label, p.score])
-    ) as ToxicityScores;
-    return {scores, confidence: data.confidence};
-  } catch {
-    return null;
-  }
+type PredictionResult = {scores: ToxicityScores; confidence: number; requestId: string};
+
+async function fetchPrediction(text: string): Promise<PredictionResult> {
+  const res = await fetch(`${MODEL_SERVICE_URL}/predict`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text}),
+  });
+  if (!res.ok) throw new Error(`model service responded ${res.status}`);
+  const data = await res.json();
+  const scores = Object.fromEntries(
+    data.predictions.map((p: {label: string; score: number}) => [p.label, p.score])
+  ) as ToxicityScores;
+  return {scores, confidence: data.confidence, requestId: data.request_id};
 }
 
 function App() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [filterMode, setFilterMode] = useState<FilterMode>('off');
+  const [error, setError] = useState<string | null>(null);
   const feedEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -59,7 +39,13 @@ function App() {
   }, [posts]);
 
   async function handleSubmit(content: string) {
-    const prediction = await fetchPrediction(content);
+    let prediction: PredictionResult | null = null;
+    try {
+      prediction = await fetchPrediction(content);
+      setError(null);
+    } catch {
+      setError('scoring service unavailable — posts won\'t be filtered');
+    }
     const newPost: Post = {
       id: crypto.randomUUID(),
       author: 'You',
@@ -67,6 +53,7 @@ function App() {
       createdAt: new Date().toISOString(),
       scores: prediction?.scores ?? null,
       confidence: prediction?.confidence ?? null,
+      requestId: prediction?.requestId ?? null,
     };
     setPosts(prev => [...prev, newPost]);
   }
@@ -90,7 +77,7 @@ function App() {
         <div ref={feedEndRef} />
       </main>
 
-      <Composer onSubmit={handleSubmit} />
+      <Composer onSubmit={handleSubmit} error={error} />
     </div>
   );
 }
@@ -138,7 +125,7 @@ function PostCard({post, filterMode}: {post: Post; filterMode: FilterMode}) {
   );
 }
 
-function Composer({onSubmit}: {onSubmit: (content: string) => Promise<void>}) {
+function Composer({onSubmit, error}: {onSubmit: (content: string) => Promise<void>; error: string | null}) {
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -157,8 +144,10 @@ function Composer({onSubmit}: {onSubmit: (content: string) => Promise<void>}) {
       handleSubmit();
     }
   }
+
   return (
     <div className="composer">
+      {error && <div className="composer-error">⚠ {error}</div>}
       <textarea
         className="composer-textarea"
         placeholder="get it off your chest..."

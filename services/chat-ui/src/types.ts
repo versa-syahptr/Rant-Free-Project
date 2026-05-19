@@ -14,9 +14,9 @@ export type Post = {
   author: string;
   content: string;
   createdAt: string;
-  scores: ToxicityScores;
-  confidence: number;
-  requestId: string;
+  scores: ToxicityScores | null;
+  confidence: number | null;
+  requestId: string | null;
 };
 
 export type PostSeverity = 'clean' | 'mild' | 'severe';

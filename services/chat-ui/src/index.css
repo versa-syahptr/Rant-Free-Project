@@ -92,9 +92,19 @@ textarea, input, select { font-family: inherit; }
   border-top: var(--border);
   padding: 16px 24px;
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: flex-end;
   z-index: 10;
+}
+
+.composer-error {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--red, #E60012);
+  letter-spacing: 0.5px;
+  margin-bottom: -4px;
 }
 
 .composer-textarea {
