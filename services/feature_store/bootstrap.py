@@ -17,6 +17,7 @@ import pandas as pd
 from datetime import datetime, timezone
 import pyarrow as pa
 from feast import FeatureStore
+from pymongo import MongoClient
 from store import get_store
 from feature_definitions import comment, comment_features
 from feast.infra.offline_stores.contrib.mongodb_offline_store.mongodb import MongoDBOfflineStore
@@ -49,6 +50,7 @@ def build_bootstrap_rows(df: pd.DataFrame) -> pd.DataFrame:
         "request_id":      [str(uuid.uuid4()) for _ in range(len(df))],
         "event_timestamp": now,
         "text":            df["text"].values,
+        "language":        df["lang"].values,
         "score_toxic":  float("nan"),
         "confidence":   float("nan"),
         "model_version":   "bootstrap",
@@ -85,9 +87,32 @@ def bootstrap_direct_write(store: FeatureStore, df: pd.DataFrame):
         progress=log_progress,
     )
 
+def is_bootstrapped(client: MongoClient, database: str, collection: str) -> bool:
+    meta = client[database][collection].find_one({"feature_view": "__bootstrap_meta"})
+    return meta is not None
 
-def main():
+
+def mark_bootstrapped(client: MongoClient, database: str, collection: str, row_count: int) -> None:
+    client[database][collection].insert_one({
+        "feature_view": "__bootstrap_meta",
+        "completed_at": datetime.now(timezone.utc),
+        "row_count": row_count,
+    })
+
+def start_bootstrap(forced: bool = False):
     print("=== Rant-Free Bootstrap ===\n")
+
+    if os.environ.get("MONGODB_CONNECTION_STRING"):
+        mongo_conn = os.environ["MONGODB_CONNECTION_STRING"]
+        mongo_db   = os.environ.get("MONGODB_DATABASE", "feast")
+        mongo_col  = os.environ.get("MONGODB_COLLECTION", "feature_history")
+
+        client = MongoClient(mongo_conn)
+        if not forced and is_bootstrapped(client, mongo_db, mongo_col):
+            print("Bootstrap sudah pernah dijalankan sebelumnya — lewati")
+            return
+    else:
+        print("Mode lokal — tidak ada mongoDB, skip cek bootstrap sebelumnya\n")
 
     # 1. Load dataset
     print(f"Membaca dataset dari: {DATASET_PATH}")
@@ -121,6 +146,7 @@ def main():
         print("Menulis bootstrap rows ke mongoDB...")
         bootstrap_direct_write(store, bootstrap_df)
         print(f"  {len(bootstrap_df):,} baris ditulis\n")
+        mark_bootstrapped(client, mongo_db, mongo_col, len(bootstrap_df))
     else:
         print("Mode lokal — data dibaca langsung dari parquet, skip write\n")
 
@@ -129,4 +155,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    from argparse import ArgumentParser
+    parser = ArgumentParser(description="Bootstrap Rant-Free Feature Store dengan dataset Jigsaw Multilingual")
+    parser.add_argument("--force", action="store_true", help="Jalankan bootstrap meski sudah pernah dijalankan sebelumnya")
+    args = parser.parse_args()
+
+    start_bootstrap(forced=args.force)

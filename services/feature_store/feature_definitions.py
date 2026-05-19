@@ -43,13 +43,14 @@ comment_source = (
 
 
 # ── Feature View ──────────────────────────────────────────────────────────────
-# Hanya 5 field sesuai skema — tidak boleh ada tambahan lain.
+# Hanya 6 field sesuai skema — tidak boleh ada tambahan lain.
 comment_features = FeatureView(
     name="comment_features",
     entities=[comment],
     ttl=timedelta(days=365),
     schema=[
         Field(name="text",          dtype=String),   # teks input mentah
+        Field(name="language",      dtype=String),   # bahasa teks (en/id/...)
         Field(name="score_toxic",   dtype=Float32),  # skor model 0.0–1.0; NULL untuk bootstrap row
         Field(name="confidence",    dtype=Float32),  # abs(score_toxic - 0.5); NULL untuk bootstrap row
         Field(name="model_version", dtype=String),   # "bootstrap" / "v1" / "v2" / ...
