@@ -5,10 +5,12 @@ resources:
   - namespace.yaml
   - configmap.yaml
   - feast-registry-pvc.yaml
+  - model-pvc.yaml
   - mongodb/pvc.yaml
   - mongodb/deployment.yaml
   - mongodb/service.yaml
   - feast-bootstrap/job.yaml
+  - training-service/job.yaml
   - model-service/deployment.yaml
   - model-service/service.yaml
   - hitl-backend/deployment.yaml

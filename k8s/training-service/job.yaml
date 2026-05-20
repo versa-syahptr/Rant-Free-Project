@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: training
+  namespace: rfp
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: training
+          # Built from services/training-service/Dockerfile.
+          # Build: docker build -t ghcr.io/OWNER/rfp-training:latest \
+          #          services/training-service/
+          image: ghcr.io/OWNER/rfp-training:latest
+          command: ["python", "main.py"]
+          envFrom:
+            - configMapRef:
+                name: rfp-config
+          env:
+            - name: CLASSIFIER_MODEL_PATH
+              value: /app/models/model_weights.pth
+          volumeMounts:
+            - name: model-weights
+              mountPath: /app/models
+          # Uncomment to request a GPU for training:
+          # resources:
+          #   limits:
+          #     nvidia.com/gpu: 1
+      volumes:
+        - name: model-weights
+          persistentVolumeClaim:
+            claimName: model-weights

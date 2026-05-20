@@ -40,16 +40,18 @@ spec:
               value: "0.25"
             - name: HITL_BACKEND_URL
               value: "http://hitl-backend:8001"
-            # Set USE_DUMMY=false and provide real paths for production inference
+            # Set USE_DUMMY=false once a trained model is available in the model-weights PVC
             - name: USE_DUMMY
               value: "true"
             - name: EMBEDDING_MODEL_NAME_OR_PATH
               value: "dummy"
             - name: CLASSIFIER_PATH
-              value: "dummy"
+              value: /app/models/model_weights.pth
           volumeMounts:
             - name: feast-registry
               mountPath: /app/registry
+            - name: model-weights
+              mountPath: /app/models
           livenessProbe:
             httpGet:
               path: /health
@@ -74,3 +76,6 @@ spec:
         - name: feast-registry
           persistentVolumeClaim:
             claimName: feast-registry
+        - name: model-weights
+          persistentVolumeClaim:
+            claimName: model-weights
