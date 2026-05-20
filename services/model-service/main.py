@@ -28,6 +28,7 @@ logger = logging.getLogger("uvicorn.error")
 # jigsaw dataset labels
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.3"))
 HITL_BACKEND_URL = os.getenv("HITL_BACKEND_URL", "http://localhost:8001")
+MONITORING_SERVICE_URL = os.getenv("MONITORING_SERVICE_URL", "http://localhost:8002")
 
 _gpu_executor   = ThreadPoolExecutor(max_workers=1)
 _feast_executor = ThreadPoolExecutor(max_workers=2)
@@ -58,11 +59,11 @@ class PredictionRequest(BaseModel):
         if not value.strip():
             raise ValueError("Text cannot be empty")
         return value
-    
+
 class TokenReason(BaseModel):
     token: str
     score: Annotated[float, Field(le=0.0, ge=1.0)]
-    
+
 class PredictionResponse(BaseModel):
     """
     {text: str, score_toxic: float, reason: [{token: str, score: float}]}
@@ -97,6 +98,26 @@ async def _enqueue_hitl(request_id: str, confidence: float):
         logger.info(f"HITL enqueue successful [{request_id}] (confidence={confidence:.4f})")
     except Exception as e:
         logger.error(f"HITL enqueue failed [{request_id}]: {e}")
+
+async def _send_monitoring_event(
+    request_id: str, text: str, score_toxic: float, confidence: float,
+    model_version: str, low_confidence: bool
+):
+    try:
+        await _http_client.post(
+            f"{MONITORING_SERVICE_URL}/events",
+            json={
+                "request_id":     request_id,
+                "text":           text,
+                "score_toxic":    score_toxic,
+                "confidence":     confidence,
+                "model_version":  model_version,
+                "low_confidence": low_confidence,
+            },
+            timeout=2.0,
+        )
+    except Exception as e:
+        logger.warning(f"Monitoring event failed [{request_id}]: {e}")
 
 # --- lifespan ---
 @asynccontextmanager
@@ -136,9 +157,14 @@ async def predict(request: PredictionRequest):
         request_id, text, score_toxic, confidence, language, _model.version,
     )
 
-    if confidence < CONFIDENCE_THRESHOLD:
+    low_confidence = confidence < CONFIDENCE_THRESHOLD
+    if low_confidence:
         logger.info(f"Low confidence ({confidence:.4f}) for request {request_id}, enqueuing for HITL review")
         asyncio.create_task(_enqueue_hitl(request_id, confidence))
+
+    asyncio.create_task(_send_monitoring_event(
+        request_id, text, score_toxic, confidence, _model.version, low_confidence
+    ))
 
     # Make sure it's rounded by only one before returned as response
     score_toxic = round(score_toxic, 1)
@@ -157,6 +183,3 @@ async def predict(request: PredictionRequest):
 @app.get("/", response_model=HealthResponse)
 async def root():
     return HealthResponse(status="ok", detail="Rant-Free Model Service running")
-
-
-

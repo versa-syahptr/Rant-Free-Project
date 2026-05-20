@@ -92,9 +92,19 @@ textarea, input, select { font-family: inherit; }
   border-top: var(--border);
   padding: 16px 24px;
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: flex-end;
   z-index: 10;
+}
+
+.composer-error {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--red, #E60012);
+  letter-spacing: 0.5px;
+  margin-bottom: -4px;
 }
 
 .composer-textarea {
@@ -179,4 +189,58 @@ textarea, input, select { font-family: inherit; }
   font-family: var(--font-mono);
   font-size: 22px;
   line-height: 1.35;
+}
+
+/* Filter toggle */
+.filter {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.filter-label {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--yellow);
+  line-height: 1;
+}
+
+.filter-seg {
+  display: flex;
+  border: 2px solid var(--paper);
+}
+
+.filter-opt {
+  background: transparent;
+  border: none;
+  border-right: 2px solid var(--paper);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  padding: 6px 14px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  transition: background 0.08s linear;
+}
+
+.filter-opt:last-child { border-right: none; }
+.filter-opt.on { background: var(--yellow); color: var(--ink); font-weight: 700; }
+.filter-opt:not(.on):hover { background: rgba(255,212,0,0.18); }
+
+/* Hidden post */
+.post-card--hidden {
+  border-style: dashed;
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.6;
+}
+
+.post-hidden-label {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  color: var(--paper);
+  padding: 8px 0;
 }
