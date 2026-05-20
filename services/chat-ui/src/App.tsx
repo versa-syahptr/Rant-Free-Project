@@ -1,18 +1,18 @@
 import './index.css';
 import {useState, useEffect, useRef} from 'react';
-import type {ToxicityScores, FilterMode, Post} from './types';
+import type {ToxicityResult, FilterMode, Post} from './types';
 
 const MODEL_SERVICE_URL = import.meta.env.VITE_MODEL_SERVICE_URL ?? 'http://localhost:8000';
 
-// mild: hide if toxic or obscene score > 0.5
-// strict: hide if any score > 0.3
-function isToxic(scores: ToxicityScores | null, mode: FilterMode): boolean {
+// mild: hide if toxic score > 0.5
+// strict: hide if toxic score > 0.3
+function isToxic(scores: ToxicityResult | null, mode: FilterMode): boolean {
   if (mode === 'off' || scores === null) return false;
-  if (mode === 'mild') return scores.toxic > 0.5 || scores.obscene > 0.5;
-  return Object.values(scores).some(s => s > 0.3);
+  if (mode === 'mild') return scores.score_toxic > 0.5;
+  return scores.score_toxic > 0.3;
 }
 
-type PredictionResult = {scores: ToxicityScores; confidence: number; requestId: string};
+type PredictionResult = {scores: ToxicityResult; confidence: number; requestId: string};
 
 async function fetchPrediction(text: string): Promise<PredictionResult> {
   const res = await fetch(`${MODEL_SERVICE_URL}/predict`, {
@@ -22,10 +22,11 @@ async function fetchPrediction(text: string): Promise<PredictionResult> {
   });
   if (!res.ok) throw new Error(`model service responded ${res.status}`);
   const data = await res.json();
-  const scores = Object.fromEntries(
-    data.predictions.map((p: {label: string; score: number}) => [p.label, p.score])
-  ) as ToxicityScores;
-  return {scores, confidence: data.confidence, requestId: data.request_id};
+  return {
+    scores: {score_toxic: data.score_toxic},
+    confidence: data.confidence,
+    requestId: data.request_id,
+  };
 }
 
 function App() {

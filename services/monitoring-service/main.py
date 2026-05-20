@@ -13,7 +13,6 @@ from pydantic import BaseModel
 
 logger = logging.getLogger("uvicorn.error")
 
-LABELS = ["toxic", "severe_toxic", "obscene", "threat", "insult", "identity_hate"]
 VOLUME_WINDOW = 60
 HEALTH_POLL_INTERVAL = int(os.getenv("HEALTH_POLL_INTERVAL", "30"))
 
@@ -28,7 +27,7 @@ SERVICES = {
 class _Store:
     def __init__(self):
         self.total = 0
-        self.score_sums: dict[str, float] = {l: 0.0 for l in LABELS}
+        self.score_toxic_sum: float = 0.0
         self.confidence_sum = 0.0
         self.timestamps: collections.deque[float] = collections.deque()
         self.alerts: list[dict] = []
@@ -37,8 +36,7 @@ class _Store:
         now = time.time()
         self.total += 1
         self.confidence_sum += event["confidence"]
-        for label in LABELS:
-            self.score_sums[label] += event["scores"].get(label, 0.0)
+        self.score_toxic_sum += event["score_toxic"]
         self.timestamps.append(now)
         cutoff = now - VOLUME_WINDOW
         while self.timestamps and self.timestamps[0] < cutoff:
@@ -149,7 +147,7 @@ app.add_middleware(
 class PredictionEvent(BaseModel):
     request_id: str
     text: str
-    scores: dict[str, float]
+    score_toxic: float
     confidence: float
     model_version: str
     low_confidence: bool = False
@@ -159,7 +157,7 @@ class MetricsResponse(BaseModel):
     total_predictions: int
     volume_last_minute: int
     avg_confidence: float
-    avg_scores: dict[str, float]
+    avg_score_toxic: float
     services: dict[str, str]  # name → "up" | "down" | "unknown"
 
 
@@ -167,7 +165,7 @@ class AlertItem(BaseModel):
     request_id: str
     text: str
     confidence: float
-    scores: dict[str, float]
+    score_toxic: float
 
 
 class ServiceStatusResponse(BaseModel):
@@ -206,7 +204,7 @@ async def metrics():
         total_predictions=_store.total,
         volume_last_minute=len(_store.timestamps),
         avg_confidence=_store.confidence_sum / n,
-        avg_scores={l: _store.score_sums[l] / n for l in LABELS},
+        avg_score_toxic=_store.score_toxic_sum / n,
         services={name: svc.status for name, svc in _health.items()},
     )
 

@@ -1,85 +1,96 @@
-import time
-import uuid
-from typing import Literal, Optional
+"""
+HITL Backend — FastAPI service
+Endpoints:
+    POST /queue                     ← called by Model Service (fire-and-forget)
+    GET  /queue                     ← called by HITL UI
+    POST /review/{request_id}       ← called by HITL UI
+    GET  /health                    ← liveness probe
+"""
+
+import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 
-app = FastAPI(title="Rant-Free HITL Backend", version="0.1.0")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+from db import enqueue, get_pending_queue, init_db, submit_review
+from models import (
+    EnqueueRequest,
+    EnqueueResponse,
+    QueueResponse,
+    ReviewRequest,
+    ReviewResponse,
 )
 
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
 
-# --- in-memory queue ---
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("hitl-backend")
 
-class QueueItem(BaseModel):
-    item_id: str
-    request_id: str
-    text: str
-    confidence: float
-    scores: dict[str, float]
-    queued_at: float
-    status: Literal["pending", "approved", "rejected"] = "pending"
-    reviewed_by: Optional[str] = None
-    reviewed_at: Optional[float] = None
+# ---------------------------------------------------------------------------
+# FastAPI app + lifespan
+# ---------------------------------------------------------------------------
 
-
-_queue: dict[str, QueueItem] = {}
-
-
-# --- schemas ---
-
-class EnqueueRequest(BaseModel):
-    request_id: str
-    text: str
-    confidence: float
-    scores: dict[str, float]
-
-class ReviewRequest(BaseModel):
-    decision: Literal["approved", "rejected"]
-    reviewer: str = "human"
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    logger.info("HITL Backend ready")
+    yield
 
 
-# --- endpoints ---
+app = FastAPI(
+    title="HITL Backend",
+    description="Human-in-the-loop review queue for Rant-Free content moderation",
+    version="0.1.0",
+    lifespan=lifespan,
+)
 
-@app.get("/health")
-async def health():
-    return {"status": "healthy"}
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 
-
-@app.post("/queue", status_code=201)
-async def enqueue(req: EnqueueRequest):
-    item_id = str(uuid.uuid4())
-    _queue[item_id] = QueueItem(
-        item_id=item_id,
-        request_id=req.request_id,
-        text=req.text,
-        confidence=req.confidence,
-        scores=req.scores,
-        queued_at=time.time(),
-    )
-    return {"item_id": item_id}
+@app.get("/health", tags=["ops"])
+def health():
+    """Liveness probe."""
+    return {"status": "ok"}
 
 
-@app.get("/queue", response_model=list[QueueItem])
-async def list_queue(status: Literal["pending", "approved", "rejected"] = "pending"):
-    return [item for item in _queue.values() if item.status == status]
+@app.post("/queue", response_model=EnqueueResponse, status_code=202, tags=["queue"])
+def post_queue(body: EnqueueRequest):
+    """
+    Called by Model Service (fire-and-forget) when confidence < threshold.
+    Idempotent — duplicate request_ids are silently ignored.
+    """
+    enqueue(body.request_id, body.confidence)
+    return EnqueueResponse(request_id=body.request_id)
 
 
-@app.post("/queue/{item_id}/review", response_model=QueueItem)
-async def review(item_id: str, req: ReviewRequest):
-    item = _queue.get(item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    if item.status != "pending":
-        raise HTTPException(status_code=409, detail=f"Item already {item.status}")
-    item.status = req.decision
-    item.reviewed_by = req.reviewer
-    item.reviewed_at = time.time()
-    return item
+@app.get("/queue", response_model=QueueResponse, tags=["queue"])
+def get_queue():
+    """
+    Returns all pending (unreviewed) items for the HITL UI.
+    Each item is enriched with text + scores from Feast.
+    """
+    items = get_pending_queue()
+    return QueueResponse(items=items, total=len(items))
+
+
+@app.post("/review/{request_id}", response_model=ReviewResponse, tags=["review"])
+def post_review(request_id: str, body: ReviewRequest):
+    """
+    Called by HITL UI when reviewer submits a verified label.
+    - Updates queue status to 'reviewed' in MongoDB
+    - Writes verified label to Feast
+    Returns 404 if request_id not found or already reviewed.
+    """
+    updated = submit_review(request_id, body.reviewed_by, body.toxic)
+    if not updated:
+        raise HTTPException(
+            status_code=404,
+            detail=f"request_id '{request_id}' not found or already reviewed",
+        )
+    return ReviewResponse(request_id=request_id)
