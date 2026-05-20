@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-service
+  namespace: rfp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: model-service
+  template:
+    metadata:
+      labels:
+        app: model-service
+    spec:
+      initContainers:
+        # Waits until feast-bootstrap has written its completion marker to MongoDB
+        - name: wait-for-bootstrap
+          image: mongo:7
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until mongosh mongodb://mongodb:27017/feast \
+                --eval "if (!db.feature_history.findOne({feature_view:'__bootstrap_meta'})) { quit(1) }" \
+                --quiet 2>/dev/null; do
+                echo "Waiting for feast bootstrap..."; sleep 10
+              done
+              echo "Feast bootstrap complete."
+      containers:
+        - name: model-service
+          image: ghcr.io/OWNER/rfp-model-service:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: rfp-config
+          env:
+            - name: CONFIDENCE_THRESHOLD
+              value: "0.25"
+            - name: HITL_BACKEND_URL
+              value: "http://hitl-backend:8001"
+            # Set USE_DUMMY=false once a trained model is available in the model-weights PVC
+            - name: USE_DUMMY
+              value: "true"
+            - name: EMBEDDING_MODEL_NAME_OR_PATH
+              value: "dummy"
+            - name: CLASSIFIER_PATH
+              value: /app/models/model_weights.pth
+          volumeMounts:
+            - name: feast-registry
+              mountPath: /app/registry
+            - name: model-weights
+              mountPath: /app/models
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Uncomment when USE_DUMMY=false to request a P100 GPU slice:
+          # resources:
+          #   limits:
+          #     nvidia.com/gpu: 1
+      volumes:
+        - name: feast-registry
+          persistentVolumeClaim:
+            claimName: feast-registry
+        - name: model-weights
+          persistentVolumeClaim:
+            claimName: model-weights

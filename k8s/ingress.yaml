@@ -1,0 +1,53 @@
+# Frontend — served at / with no path rewriting
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rfp-frontend
+  namespace: rfp
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: chat-ui
+                port:
+                  number: 80
+---
+# API services — prefix is stripped before forwarding to each backend.
+# /api/model/<rest> → model-service:8000/<rest>
+# /api/hitl/<rest>  → hitl-backend:8001/<rest>
+#
+# Build chat-ui with matching base URLs, e.g.:
+#   VITE_MODEL_SERVICE_URL=/api/model
+#   VITE_HITL_URL=/api/hitl
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rfp-api
+  namespace: rfp
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /api/model(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: model-service
+                port:
+                  number: 8000
+          - path: /api/hitl(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: hitl-backend
+                port:
+                  number: 8001

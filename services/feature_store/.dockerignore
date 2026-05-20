@@ -1,0 +1,9 @@
+# Generated artifacts — not needed in image
+data/dataset-output.parquet
+data/online_store.db
+data/registry.db
+registry/
+feature_store.egg-info/
+__pycache__/
+**/__pycache__/
+*.ipynb

@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hitl-backend
+  namespace: rfp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hitl-backend
+  template:
+    metadata:
+      labels:
+        app: hitl-backend
+    spec:
+      initContainers:
+        - name: wait-for-bootstrap
+          image: mongo:7
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until mongosh mongodb://mongodb:27017/feast \
+                --eval "if (!db.feature_history.findOne({feature_view:'__bootstrap_meta'})) { quit(1) }" \
+                --quiet 2>/dev/null; do
+                echo "Waiting for feast bootstrap..."; sleep 10
+              done
+              echo "Feast bootstrap complete."
+      containers:
+        - name: hitl-backend
+          image: ghcr.io/OWNER/rfp-hitl-backend:latest
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - configMapRef:
+                name: rfp-config
+          volumeMounts:
+            - name: feast-registry
+              mountPath: /app/registry
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: feast-registry
+          persistentVolumeClaim:
+            claimName: feast-registry

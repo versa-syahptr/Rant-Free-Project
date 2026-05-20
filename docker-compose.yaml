@@ -33,7 +33,14 @@ services:
       - /bin/sh
       - -c
       - |
-        pwd && ls -la /app
+        if [ ! -f data/dataset.parquet ]; then
+          echo "dataset.parquet not found — downloading from Google Drive..."
+          mkdir -p data
+          pip install gdown -q
+          gdown "$${DATASET_GDRIVE_ID}" -O data/dataset.parquet
+        else
+          echo "dataset.parquet already present, skipping download."
+        fi
         pip install -e . -q
         python bootstrap.py
     environment:
@@ -42,6 +49,7 @@ services:
       MONGODB_DATABASE: feast
       MONGODB_COLLECTION: feature_history
       FEATURE_STORE_REGISTRY_PATH: /app/registry/
+      DATASET_GDRIVE_ID: 1uTkXjSa8o6ew38y3p2tgWqAIc0b-mE4w
     depends_on:
       mongodb:
         condition: service_healthy

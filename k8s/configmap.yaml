@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rfp-config
+  namespace: rfp
+data:
+  MONGODB_CONNECTION_STRING: "mongodb://mongodb:27017"
+  MONGODB_DATABASE: "feast"
+  MONGODB_COLLECTION: "feature_history"
+  FEATURE_STORE_REGISTRY_PATH: "/app/registry"

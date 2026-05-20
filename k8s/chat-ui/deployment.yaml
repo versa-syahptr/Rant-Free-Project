@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat-ui
+  namespace: rfp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chat-ui
+  template:
+    metadata:
+      labels:
+        app: chat-ui
+    spec:
+      containers:
+        - name: chat-ui
+          # The SPA is built at image build time. API base URLs must be set
+          # as VITE_* build args when building the image, e.g.:
+          #   docker build --build-arg VITE_MODEL_SERVICE_URL=/api/model \
+          #                --build-arg VITE_HITL_URL=/api/hitl ...
+          image: ghcr.io/OWNER/rfp-chat-ui:latest
+          ports:
+            - containerPort: 80
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
