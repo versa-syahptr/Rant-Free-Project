@@ -1,0 +1,17 @@
+# Large dataset files — only needed by the feast-bootstrap image,
+# not by model-service or hitl-backend
+feature_store/data/
+feature_store/registry/
+feature_store/feature_store.egg-info/
+feature_store/__pycache__/
+**/feature_store/__pycache__/
+
+# Python artifacts
+**/__pycache__/
+**/*.pyc
+
+# Frontend build artifacts (irrelevant to Python services)
+chat-ui/node_modules/
+chat-ui/dist/
+hitl-ui/node_modules/
+hitl-ui/dist/
