@@ -12,6 +12,7 @@ from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, PreTrainedModel, 
 import wandb
 
 from pipeline import RantFreeClassifier, RantFreeModelConfig, load_embedding_tokenizer_and_model
+# from sample import sample  # Uncomment this to use sample.
 
 # You can find other list of supported languages here:
 # https://github.com/facebookresearch/flores/blob/main/flores200/README.md#languages-in-flores-200
@@ -38,12 +39,6 @@ TOXIC_ATTRIBUTE = os.getenv("TOXIC_ATTRIBUTE", "toxic")
 LANGUAGE_ATTRIBUTE = os.getenv("LANGUAGE_ATTRIBUTE", "flores_200_lang")
 
 USE_WANDB = os.getenv("USE_WANDB", "false") == "true"
-
-def sample() -> pd.DataFrame:
-    # I think I need to know how to use Feast.
-    # Basically, I want to take some N representative data, let's say 4000.
-    # 2000 of them are toxic, 2000 is not
-    raise NotImplementedError
 
 def translate_some(df: pd.DataFrame) -> pd.DataFrame:
     # Take random half, and then translate it in fixed language list, cycle.
@@ -370,6 +365,14 @@ if __name__ == "__main__":
     print("Initializing embedding tokenizer and model ....")
     embedding_tokenizer, embedding_model = load_embedding_tokenizer_and_model(EMBEDDING_MODEL_NAME_OR_PATH)
     embedding_dim = embedding_model.get_input_embeddings().embedding_dim
+
+    # # To test sample(), please use sample.py instead. Uncomment this if stable enough. (and the import statement)
+    # print(f"Sampling ....")
+    # start_time = time.perf_counter()
+    # df = sample()
+    # print("DataFrame size from sample():", len(df))
+    # duration = time.perf_counter() - start_time
+    # print(f"(Duration: {duration} s)")
 
     df_path = "data/sample.csv"
     print(f"Reading {df_path} ....")
