@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: feast-bootstrap
+  namespace: rfp
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: wait-for-mongodb
+          image: mongo:7
+          command:
+            - /bin/sh
+            - -c
+            - |
+              until mongosh mongodb://mongodb:27017 \
+                --eval "db.adminCommand('ping')" --quiet 2>/dev/null; do
+                echo "Waiting for MongoDB..."; sleep 5
+              done
+      containers:
+        - name: feast-bootstrap
+          # Built from services/feature_store/Dockerfile.
+          # Build: docker build -t ghcr.io/OWNER/rfp-feast-bootstrap:latest \
+          #          services/feature_store/
+          image: ghcr.io/OWNER/rfp-feast-bootstrap:latest
+          command: ["python", "bootstrap.py"]
+          envFrom:
+            - configMapRef:
+                name: rfp-config
+          volumeMounts:
+            - name: feast-registry
+              mountPath: /app/registry
+      volumes:
+        - name: feast-registry
+          persistentVolumeClaim:
+            claimName: feast-registry

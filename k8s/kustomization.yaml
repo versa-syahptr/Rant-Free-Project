@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - feast-registry-pvc.yaml
+  - mongodb/pvc.yaml
+  - mongodb/deployment.yaml
+  - mongodb/service.yaml
+  - feast-bootstrap/job.yaml
+  - model-service/deployment.yaml
+  - model-service/service.yaml
+  - hitl-backend/deployment.yaml
+  - hitl-backend/service.yaml
+  - chat-ui/deployment.yaml
+  - chat-ui/service.yaml
+  - ingress.yaml
