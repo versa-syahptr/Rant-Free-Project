@@ -3,7 +3,8 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["feature_store*"]  # hanya package ini, ignore data/ dan registry/
+where = [".."]        # scan from parent (services/) so feature_store/ is found as a package
+include = ["feature_store*"]
 
 [project]
 name = "feature_store"
