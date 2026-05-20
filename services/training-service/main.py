@@ -65,7 +65,7 @@ def translate_some(df: pd.DataFrame) -> pd.DataFrame:
             **inputs, forced_bos_token_id=tokenizer.convert_tokens_to_ids(lang), max_length=MAX_SEQUENCE_LENGTH,
         )
         modified_comment_text_list.append(tokenizer.batch_decode(translated_tokens, skip_special_tokens=True)[0])
-        target_language_list.append(target_language_list)
+        target_language_list.append(lang)
 
     print(
         "Average (possibly truncated) translated source token count:",
@@ -145,8 +145,8 @@ def custom_criterion(pred, y):
 def split_indices(n: int) -> tuple[list[int], list[int], list[int]]:
     indices = [i for i in range(n)]
 
-    train_val_indices, test_indices = train_test_split(indices, test_size=0.2)
-    train_indices, val_indices = train_test_split(train_val_indices, test_size=0.2)
+    train_val_indices, test_indices = train_test_split(indices, test_size=0.2, random_state=120)
+    train_indices, val_indices = train_test_split(train_val_indices, test_size=0.2, random_state=120)
     return train_indices, val_indices, test_indices
 
 def train_model(
@@ -266,7 +266,7 @@ def train_model(
             "val/loss": val_avg_loss,
         })
 
-        if len(val_loss_per_epoch) > 1 and val_loss_per_epoch[-1] > val_loss_per_epoch[-2]:
+        if len(val_loss_per_epoch) > 1 and val_loss_per_epoch[-1] >= val_loss_per_epoch[-2]:
             print("Early stopping occured!")
             stop = True
 
